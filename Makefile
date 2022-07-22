@@ -19,7 +19,12 @@ bochs: all
 	bochs -q -f bochsrc
 
 qemug: all
-	qemu-system-x86_64 -hda hd.img -S -s
+	qemu-system-x86_64 -m 32M -hda hd.img -S -s
 
 qemu: all
-	qemu-system-x86_64 -hda hd.img
+	qemu-system-x86_64 -m 32M -hda hd.img
+
+vmdk: $(BUILD)/master.vmdk
+
+$(BUILD)/master.vmdk: hd.img
+	qemu-img convert -O vmdk $< $@
