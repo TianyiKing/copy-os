@@ -1,103 +1,129 @@
-; 0柱面0磁道1扇區
-[ORG  0x7c00]
+[org 0x7c00]
 
-[SECTION .data]
-BOOT_MAIN_ADDR equ 0x500
+; 设置屏幕模式为文本模式，清除屏幕
+mov ax, 3
+int 0x10
 
-[SECTION .text]
-[BITS 16]
-global _start
-_start:
-    ; 设置屏幕模式为文本模式，清除屏幕
-    mov ax, 3
-    int 0x10
+; 初始化段寄存器
+mov ax, 0
+mov ds, ax
+mov es, ax
+mov ss, ax
+mov sp, 0x7c00
 
-    mov ecx, 2  ; 从硬盘哪个扇区开始读
-    mov bl, 2   ; 读取的扇区数量
+mov si, booting
+call print
 
-    ; 0x1f2 8bit 指定读取或写入的扇区数
+mov edi, 0x500; 读取的目标内存
+mov ecx, 1; 起始扇区
+mov bl, 2; 扇区数量
+
+call read_disk
+
+xchg bx, bx
+cmp word [0x500], 0x55aa
+jnz error
+
+jmp 0:0x502
+
+; 阻塞
+jmp $
+
+read_disk:
+
+    ; 设置读写扇区的数量
     mov dx, 0x1f2
     mov al, bl
     out dx, al
 
-    ; 0x1f3 8bit iba地址的第八位 0-7
-    inc dx
-    mov al, cl
+    inc dx; 0x1f3
+    mov al, cl; 起始扇区的前八位
     out dx, al
 
-    ; 0x1f4 8bit iba地址的中八位 8-15
-    inc dx
-    mov al, ch      ; 取中8位
+    inc dx; 0x1f4
+    shr ecx, 8
+    mov al, cl; 起始扇区的中八位
     out dx, al
 
-    ; 0x1f5 8bit iba地址的高八位 16-23
-    inc dx
-    shr ecx, 16
-    mov al, cl
+    inc dx; 0x1f5
+    shr ecx, 8
+    mov al, cl; 起始扇区的高八位
     out dx, al
 
-    ; 0x1f6 8bit
-    ; 0-3 位iba地址的24-27
-    ; 4 0表示主盘 1表示从盘
-    ; 5、7位固定为1
-    ; 6 0表示CHS模式，1表示LAB模式
-    inc dx
-    mov al, ch
-    and al, 0b1110_1111
+    inc dx; 0x1f6
+    shr ecx, 8
+    and cl, 0b1111; 将高四位置为 0
+
+    mov al, 0b1110_0000;
+    or al, cl
+    out dx, al; 主盘 - LBA 模式
+
+    inc dx; 0x1f7
+    mov al, 0x20; 读硬盘
     out dx, al
 
-    ; 0x1f7 8bit  命令或状态端口
-    inc dx
-    mov al, 0x20
-    out dx, al
+    xor ecx, ecx; 将 ecx 清空
+    mov cl, bl; 得到读写扇区的数量
 
-    ; 验证状态
-    ; 3 0表示硬盘未准备好与主机交换数据 1表示准备好了
-    ; 7 0表示硬盘不忙 1表示硬盘忙
-    ; 0 0表示前一条指令正常执行 1表示执行出错 出错信息通过0x1f1端口获得
-.read_check:
-    mov dx, 0x1f7
-    in al, dx
-    and al, 0b10001000  ; 取硬盘状态的第3、7位
-    cmp al, 0b00001000  ; 硬盘数据准备好了且不忙了
-    jnz .read_check
+    .read:
+        push cx; 保存 cx
+        call .waits; 等待数据准备完毕
+        call .reads; 读取一个扇区
+        pop cx; 恢复 cx
+        loop .read
 
-    ; 读数据
-    mov dx, 0x1f0
-    mov cx, 256
-    mov edi, BOOT_MAIN_ADDR
-.read_data:
-    in ax, dx
-    mov [edi], ax
-    add edi, 2
-    loop .read_data
+    ret
 
-    ; 跳过去
-    mov     si, jmp_to_setup
-    call    print
+    .waits:
+        mov dx, 0x1f7
+        .check:
+            in al, dx
+            jmp $+2; nop 直接跳转到下一行
+            jmp $+2; 一点点延迟
+            jmp $+2
+            and al, 0b1000_1000
+            cmp al, 0b0000_1000
+            jnz .check
+        ret
 
-    jmp     BOOT_MAIN_ADDR
+    .reads:
+        mov dx, 0x1f0
+        mov cx, 256; 一个扇区 256 字
+        .readw:
+            in ax, dx
+            jmp $+2; 一点点延迟
+            jmp $+2
+            jmp $+2
+            mov [edi], ax
+            add edi, 2
+            loop .readw
+        ret
 
-; 如何调用
-; mov     si, msg   ; 1 传入字符串
-; call    print     ; 2 调用
 print:
     mov ah, 0x0e
-    mov bh, 0
-    mov bl, 0x01
-.loop:
+.next:
     mov al, [si]
     cmp al, 0
     jz .done
     int 0x10
-
     inc si
-    jmp .loop
+    jmp .next
 .done:
     ret
 
-jmp_to_setup:
-    db "jump to setup...", 10, 13, 0
+booting:
+    db "Booting Onix...", 10, 13, 0; \n\r
 
+error:
+    mov si, .msg
+    call print
+    hlt; 让 CPU 停止
+    jmp $
+    .msg db "Booting Error!!!", 10, 13, 0
+
+; 填充 0
 times 510 - ($ - $$) db 0
+
+; 主引导扇区的最后两个字节必须是 0x55 0xaa
+; dw 0xaa55
 db 0x55, 0xaa
