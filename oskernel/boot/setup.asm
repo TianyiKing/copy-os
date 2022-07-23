@@ -1,186 +1,189 @@
-[org 0x500]
+[ORG  0x500]
 
-dw 0x55aa; 魔数，用于判断错误
+[SECTION .data]
+KERNEL_ADDR equ 0x1200
 
-; 打印字符串
-mov si, loading
-call print
+[SECTION .gdt]
+SEG_BASE equ 0
+SEG_LIMIT equ 0xfffff
 
-; xchg bx, bx; 断点
+CODE_SELECTOR equ (1 << 3)
+DATA_SELECTOR equ (2 << 3)
 
+gdt_base:
+    dd 0, 0
+gdt_code:
+    dw SEG_LIMIT & 0xffff
+    dw SEG_BASE & 0xffff
+    db SEG_BASE >> 16 & 0xff
+    ;    P_DPL_S_TYPE
+    db 0b1_00_1_1000
+    ;    G_DB_AVL_LIMIT
+    db 0b0_1_00_0000 | (SEG_LIMIT >> 16 & 0xf)
+    db SEG_BASE >> 24 & 0xf
+gdt_data:
+    dw SEG_LIMIT & 0xffff
+    dw SEG_BASE & 0xffff
+    db SEG_BASE >> 16 & 0xff
+    ;    P_DPL_S_TYPE
+    db 0b1_00_1_0010
+    ;    G_DB_AVL_LIMIT
+    db 0b1_1_00_0000 | (SEG_LIMIT >> 16 & 0xf)
+    db SEG_BASE >> 24 & 0xf
+gdt_ptr:
+    dw $ - gdt_base
+    dd gdt_base
 
-prepare_protected_mode:
-    ; xchg bx, bx; 断点
+[SECTION .text]
+[BITS 16]
+global setup_start
+setup_start:
+    mov     ax, 0
+    mov     ss, ax
+    mov     ds, ax
+    mov     es, ax
+    mov     fs, ax
+    mov     gs, ax
+    mov     si, ax
 
-    cli; 关闭中断
+    mov     si, prepare_enter_protected_mode_msg
+    call    print
 
-    ; 打开 A20 线
-    in al,  0x92
-    or al, 0b10
-    out 0x92, al
+enter_protected_mode:
+    ; 关中断
+    cli
 
-    lgdt [gdt_ptr]; 加载 gdt
+    ; 加载gdt表
+    lgdt  [gdt_ptr]
 
-    ; 启动保护模式
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
+    ; 开A20
+    in    al,  92h
+    or    al,  00000010b
+    out   92h, al
 
-    ; 用跳转来刷新缓存，启用保护模式
-    jmp dword code_selector:protect_mode
+    ; 设置保护模式
+    mov   eax, cr0
+    or    eax , 1
+    mov   cr0, eax
 
+    jmp CODE_SELECTOR:protected_mode
+
+; 如何调用
+; mov     si, msg   ; 1 传入字符串
+; call    print     ; 2 调用
 print:
     mov ah, 0x0e
-.next:
+    mov bh, 0
+    mov bl, 0x01
+.loop:
     mov al, [si]
     cmp al, 0
     jz .done
     int 0x10
+
     inc si
-    jmp .next
+    jmp .loop
 .done:
     ret
 
-loading:
-    db "Loading Onix...", 10, 13, 0; \n\r
-detecting:
-    db "Detecting Memory Success...", 10, 13, 0; \n\r
-
-error:
-    mov si, .msg
-    call print
-    hlt; 让 CPU 停止
-    jmp $
-    .msg db "Loading Error!!!", 10, 13, 0
-
-[bits 32]
-protect_mode:
-    ; xchg bx, bx; 断点
-    mov ax, data_selector
+[BITS 32]
+protected_mode:
+    mov ax, DATA_SELECTOR
     mov ds, ax
+    mov ss, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
-    mov ss, ax; 初始化段寄存器
 
-    mov esp, 0x10000; 修改栈顶
+    mov esp, 0x9fbff
 
-    mov edi, 0x10000; 读取的目标内存
-    mov ecx, 3; 起始扇区
-    mov bl, 60; 扇区数量
+    ; 将内核读入内存
+    mov edi, KERNEL_ADDR
+    mov ecx, 3
+    mov bl, 60
+    call read_hd
 
-    call read_disk
-    xchg bx, bx
-    mov byte [0xb8000], 'B';
+    jmp CODE_SELECTOR:KERNEL_ADDR
 
-    jmp dword code_selector:0x10000
-
-    ud2; 表示出错
-
-read_disk:
-
-    ; 设置读写扇区的数量
+read_hd:
+    ; 0x1f2 8bit 指定读取或写入的扇区数
     mov dx, 0x1f2
     mov al, bl
     out dx, al
 
-    inc dx; 0x1f3
-    mov al, cl; 起始扇区的前八位
+    ; 0x1f3 8bit iba地址的第八位 0-7
+    inc dx
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f4
-    shr ecx, 8
-    mov al, cl; 起始扇区的中八位
+    ; 0x1f4 8bit iba地址的中八位 8-15
+    inc dx
+    mov al, ch
     out dx, al
 
-    inc dx; 0x1f5
-    shr ecx, 8
-    mov al, cl; 起始扇区的高八位
+    ; 0x1f5 8bit iba地址的高八位 16-23
+    inc dx
+    shr ecx, 16
+    mov al, cl
     out dx, al
 
-    inc dx; 0x1f6
+    ; 0x1f6 8bit
+    ; 0-3 位iba地址的24-27
+    ; 4 0表示主盘 1表示从盘
+    ; 5、7位固定为1
+    ; 6 0表示CHS模式，1表示LAB模式
+    inc dx
     shr ecx, 8
-    and cl, 0b1111; 将高四位置为 0
-
-    mov al, 0b1110_0000;
+    and cl, 0b1111
+    mov al, 0b1110_0000     ; LBA模式
     or al, cl
-    out dx, al; 主盘 - LBA 模式
-
-    inc dx; 0x1f7
-    mov al, 0x20; 读硬盘
     out dx, al
 
-    xor ecx, ecx; 将 ecx 清空
-    mov cl, bl; 得到读写扇区的数量
+    ; 0x1f7 8bit  命令或状态端口
+    inc dx
+    mov al, 0x20
+    out dx, al
 
-    .read:
-        push cx; 保存 cx
-        call .waits; 等待数据准备完毕
-        call .reads; 读取一个扇区
-        pop cx; 恢复 cx
-        loop .read
+    ; 设置loop次数，读多少个扇区要loop多少次
+    mov cl, bl
+.start_read:
+    push cx     ; 保存loop次数，防止被下面的代码修改破坏
+
+    call .wait_hd_prepare
+    call read_hd_data
+
+    pop cx      ; 恢复loop次数
+
+    loop .start_read
+
+.return:
+    ret
+
+; 一直等待，直到硬盘的状态是：不繁忙，数据已准备好
+; 即第7位为0，第3位为1，第0位为0
+.wait_hd_prepare:
+    mov dx, 0x1f7
+
+.check:
+    in al, dx
+    and al, 0b1000_1000
+    cmp al, 0b0000_1000
+    jnz .check
 
     ret
 
-    .waits:
-        mov dx, 0x1f7
-        .check:
-            in al, dx
-            jmp $+2; nop 直接跳转到下一行
-            jmp $+2; 一点点延迟
-            jmp $+2
-            and al, 0b1000_1000
-            cmp al, 0b0000_1000
-            jnz .check
-        ret
+; 读硬盘，一次读两个字节，读256次，刚好读一个扇区
+read_hd_data:
+    mov dx, 0x1f0
+    mov cx, 256
 
-    .reads:
-        mov dx, 0x1f0
-        mov cx, 256; 一个扇区 256 字
-        .readw:
-            in ax, dx
-            jmp $+2; 一点点延迟
-            jmp $+2
-            jmp $+2
-            mov [edi], ax
-            add edi, 2
-            loop .readw
-        ret
+.read_word:
+    in ax, dx
+    mov [edi], ax
+    add edi, 2
+    loop .read_word
 
-code_selector equ (1 << 3)
-data_selector equ (2 << 3)
+    ret
 
-memory_base equ 0; 内存开始的位置：基地址
-
-; 内存界限 4G / 4K - 1
-memory_limit equ ((1024 * 1024 * 1024 * 4) / (1024 * 4)) - 1
-
-gdt_ptr:
-    dw (gdt_end - gdt_base) - 1
-    dd gdt_base
-gdt_base:
-    dd 0, 0; NULL 描述符
-gdt_code:
-    dw memory_limit & 0xffff; 段界限 0 ~ 15 位
-    dw memory_base & 0xffff; 基地址 0 ~ 15 位
-    db (memory_base >> 16) & 0xff; 基地址 16 ~ 23 位
-    ; 存在 - dlp 0 - S _ 代码 - 非依从 - 可读 - 没有被访问过
-    db 0b_1_00_1_1_0_1_0;
-    ; 4k - 32 位 - 不是 64 位 - 段界限 16 ~ 19
-    db 0b1_1_0_0_0000 | (memory_limit >> 16) & 0xf;
-    db (memory_base >> 24) & 0xff; 基地址 24 ~ 31 位
-gdt_data:
-    dw memory_limit & 0xffff; 段界限 0 ~ 15 位
-    dw memory_base & 0xffff; 基地址 0 ~ 15 位
-    db (memory_base >> 16) & 0xff; 基地址 16 ~ 23 位
-    ; 存在 - dlp 0 - S _ 数据 - 向上 - 可写 - 没有被访问过
-    db 0b_1_00_1_0_0_1_0;
-    ; 4k - 32 位 - 不是 64 位 - 段界限 16 ~ 19
-    db 0b1_1_0_0_0000 | (memory_limit >> 16) & 0xf;
-    db (memory_base >> 24) & 0xff; 基地址 24 ~ 31 位
-gdt_end:
-
-ards_count:
-    dw 0
-ards_buffer:
-
+prepare_enter_protected_mode_msg:
+    db "Prepare to go into protected mode...", 10, 13, 0

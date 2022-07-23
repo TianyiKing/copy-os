@@ -26,7 +26,7 @@ ${BUILD}/system.bin: ${BUILD}/kernel.bin
 	nm ${BUILD}/kernel.bin | sort > ${BUILD}/system.map
 
 ${BUILD}/kernel.bin: ${BUILD}/boot/head.o ${BUILD}/init/main.o
-	ld -m elf_i386 $^ -o $@ -Ttext 0x9000
+	ld -m elf_i386 $^ -o $@ -Ttext 0x1200
 
 ${BUILD}/init/main.o: oskernel/init/main.c
 	$(shell mkdir -p ${BUILD}/init)
