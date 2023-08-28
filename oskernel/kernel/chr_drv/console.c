@@ -122,20 +122,24 @@ static void command_del()
     *(u16 *)pos = 0x0720;
 }
 
-void console_write(char *buf, u32 count)
+int console_write(char *buf, u32 count)
 {
     CLI
+
+    int write_size = 0;
 
     char ch;
     char *ptr = (char *)pos;
     while (count--)
     {
+        write_size++;
         ch = *buf++;
         switch (ch)
         {
             case ASCII_NUL:
                 break;
             case ASCII_BEL:
+                // todo \a
                 break;
             case ASCII_BS:
                 command_bs();
@@ -179,6 +183,8 @@ void console_write(char *buf, u32 count)
     set_cursor();
 
     STI
+
+    return write_size;
 }
 
 void console_init(void) {

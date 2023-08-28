@@ -7,9 +7,17 @@
 #include "../include/linux/traps.h"
 #include "../include/linux/mm.h"
 #include "../include/linux/task.h"
-#include "../include/linux/sched.h"
+#include "../include/stdio.h"
+#include "../include/stdlib.h"
 
 extern void clock_init();
+
+void user_mode() {
+    int age = 10;
+
+    char* str = "welcome";
+    printf("%s, %d\n", str, 11);
+}
 
 void kernel_main(void) {
     console_init();
