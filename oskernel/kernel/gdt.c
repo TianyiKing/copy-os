@@ -71,7 +71,7 @@ void init_tss_item(int gdt_index, int base, int limit) {
     printk("init tss...\n");
 
     tss.ss0 = r0_data_selector;
-    tss.esp0 = get_free_page() + PAGE_SIZE;
+    tss.esp0 = kmalloc(4096) + PAGE_SIZE;
     tss.iobase = sizeof(tss);
 
     gdt_item_t* item = &gdt[gdt_index];
@@ -110,7 +110,6 @@ void gdt_init() {
     gdt_ptr.base = &gdt;
     gdt_ptr.limit = sizeof(gdt) - 1;
 
-    BOCHS_DEBUG_MAGIC
     __asm__ volatile ("lgdt gdt_ptr;");
 
     init_tss_item(6, &tss, sizeof(tss_t) - 1);

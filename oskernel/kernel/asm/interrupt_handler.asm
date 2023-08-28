@@ -4,7 +4,7 @@
 extern printk
 extern keymap_handler
 extern exception_handler
-extern system_call_table
+extern system_call
 
 extern current
 
@@ -25,8 +25,16 @@ keymap_handler_entry:
 
     iret
 
+extern system_call_table
+
+; eax = 调用号
+; ebx = 第一个参数
+; ecx = 第二个参数
+; edx = 第三个参数
 global system_call_entry
 system_call_entry:
+    xchg bx, bx
+
     mov esi, [current]
 
     mov edi, [esp + 4 * 3]

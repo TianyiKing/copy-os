@@ -136,7 +136,7 @@ void kfree_s(void *obj, int size)
         }
     }
     return;
-    found:
+found:
     CLI
     *((void **)obj) = bdesc->freeptr;
     bdesc->freeptr = obj;
