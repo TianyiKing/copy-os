@@ -13,6 +13,7 @@
 #include "../../include/asm/io.h"
 #include "../../include/linux/types.h"
 #include "../../include/linux/traps.h"
+#include "../../include/ya_shell.h"
 
 #define INV 0 // 不可见字符
 #define CODE_PRINT_SCREEN_DOWN 0xB7
@@ -333,4 +334,17 @@ void keymap_handler(int idt_index) {
         return;
 
     printk("%c", ch);
+
+    // shell相关
+    if (10 == ch) { // enter
+        exec_ya_shell();
+        return;
+    }
+
+    if (8 == ch) {  // backspace
+        del_ya_shell();
+        return;
+    }
+
+    run_ya_shell(ch);
 }

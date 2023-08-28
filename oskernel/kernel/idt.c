@@ -5,6 +5,7 @@
 #include "../include/asm/system.h"
 #include "../include/linux/head.h"
 #include "../include/linux/traps.h"
+#include "../include/linux/kernel.h"
 
 #define INTERRUPT_TABLE_SIZE    256
 
@@ -16,6 +17,7 @@ extern void interrupt_handler_entry();
 extern void keymap_handler_entry();
 extern void clock_handler_entry();
 extern void system_call_entry();
+extern void hd_handler_entry();
 
 // 是在汇编中定义的
 extern int interrupt_handler_table[0x2f];
@@ -40,8 +42,12 @@ void idt_init() {
             handler = (int)keymap_handler_entry;
         }
 
+        if (0x2e == i) {
+            handler = (int)hd_handler_entry;
+        }
+
         if (0x80 == i) {
-            handler = system_call_entry;
+            handler = (int)system_call_entry;
         }
 
         p->offset0 = handler & 0xffff;
