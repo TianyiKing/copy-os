@@ -23,8 +23,6 @@ void kernel_main(void) {
 
     task_init();
 
-    sched();
-
     __asm__("sti;");
 
     while (true);

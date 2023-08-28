@@ -7,4 +7,6 @@
 
 void sched();
 
+void do_timer();
+
 #endif //ZIYA_OSKERNEL_RESEARCH_SCHED_H

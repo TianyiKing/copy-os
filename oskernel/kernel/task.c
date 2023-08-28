@@ -7,6 +7,8 @@
 #include "../include/linux/mm.h"
 #include "../include/string.h"
 
+extern void sched_task();
+
 extern task_t* current;
 extern int jiffy;
 extern int cpu_tickes;
@@ -42,6 +44,8 @@ task_t* create_task(char* name, task_fun_t fun, int priority) {
     task->task.pid = find_empty_process();
     task->task.ppid = (NULL == current)? 0 : current->pid;
 
+    task->task.priority = priority;
+    task->task.counter = priority;
     task->task.scheduling_times = 0;
 
     strcpy(task->task.name, name);
@@ -64,23 +68,44 @@ task_t* create_task(char* name, task_fun_t fun, int priority) {
 }
 
 void* t1_fun(void* arg) {
-//    for (int i = 0; i < 0xffffffff; ++i) {
-        printk("t1\n");
-//    }
+    for (int i = 0; i < 0xffffffff; ++i) {
+        printk("t1: %d\n", i);
+
+        task_sleep(1000);
+    }
+}
+
+void* t2_fun(void* arg) {
+    for (int i = 0; i < 0xffffffff; ++i) {
+        printk("t2: %d\n", i);
+
+        task_sleep(500);
+    }
+}
+
+void* t3_fun(void* arg) {
+    for (int i = 0; i < 0xffffffff; ++i) {
+        printk("t3: %d\n", i);
+
+        task_sleep(300);
+    }
 }
 
 void* idle(void* arg) {
     create_task("t1", t1_fun, 1);
+    create_task("t2", t2_fun, 2);
+    create_task("t3", t3_fun, 3);
 
     while (true) {
-        printk("#2 idle task running...\n");
+//        printk("idle task running...\n");
 
-        sched();
+        __asm__ volatile ("sti;");
+        __asm__ volatile ("hlt;");
     }
 }
 
 void task_init() {
-    create_task("idle", idle, 1);
+    create_task("idle", idle, 0);
 }
 
 int inc_scheduling_times(task_t* task) {
@@ -131,6 +156,37 @@ void current_task_exit(int code) {
             current = NULL;
 
             break;
+        }
+    }
+}
+
+void task_sleep(int ms) {
+    CLI
+
+    if (NULL == current) {
+        printk("task sleep: current task is null\n");
+        return;
+    }
+
+    int ticks = ms / jiffy;
+    ticks += (0 == ms % jiffy)? 0 : 1;
+
+    current->counter = cpu_tickes + ticks;
+    current->state = TASK_SLEEPING;
+
+    sched_task();
+}
+
+void task_wakeup() {
+    for (int i = 1; i < NR_TASKS; ++i) {
+        task_t* task = tasks[i];
+
+        if (NULL == task) continue;
+        if (TASK_SLEEPING != task->state) continue;
+
+        if (cpu_tickes >= task->counter) {
+            task->state = TASK_READY;
+            task->counter = task->priority;
         }
     }
 }
