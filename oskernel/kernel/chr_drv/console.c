@@ -165,7 +165,7 @@ void console_write(char *buf, u32 count)
 
                 *ptr = ch;
                 ptr++;
-                *ptr = 0x07;
+                *ptr = 0x0c;
                 ptr++;
 
                 pos += 2;
@@ -178,4 +178,9 @@ void console_write(char *buf, u32 count)
 
 void console_init(void) {
     console_clear();
+
+    short *ptr = (short *)pos;
+    *ptr++ = 0xf848;
+    *ptr++ = 0xf848;
+    *ptr++ = 0xf848;
 }

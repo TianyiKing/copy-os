@@ -4,15 +4,13 @@
 
 #include "../include/linux/tty.h"
 #include "../include/linux/kernel.h"
+#include "../include/string.h"
 
 void kernel_main(void) {
     console_init();
 
-    char* s = "ziya";
-
-    for (int i = 0; i < 2048; ++i) {
-        printk("name: %s, age:%d\n", s, i);
-    }
+//    char* s = "ziya";
+//    console_write(s, strlen(s));
 
     while (true);
 }
